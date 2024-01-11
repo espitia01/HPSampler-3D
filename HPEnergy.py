@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from HPDistance import HPDistance
 
 def HPEnergy(P, S, J):
-    N = P.size
+    N = len(P)
     D = HPDistance(S)
 
     # Set diagonal and sub-diagonal to a value other than 1
@@ -14,7 +14,7 @@ def HPEnergy(P, S, J):
             D[i + 1, i] = 0
 
     # Create matrix with the product of the protein array
-    P2 = np.outer(P, P)  # This replaces the loop and np.ones
+    P2 = np.outer(P, P)
 
     # Calculate energy
     E = np.sum((D == 1) * P2)
@@ -22,4 +22,3 @@ def HPEnergy(P, S, J):
     E *= 0.5 * J
 
     return E
-

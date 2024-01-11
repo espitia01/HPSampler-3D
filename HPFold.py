@@ -13,14 +13,21 @@ time_dict = {}
 def translate_to_origin(S):
     return S - S[:, 0].reshape(-1, 1)
 
-def rotate(S, angle):
-    rotation_matrix = np.array([[np.cos(angle), -np.sin(angle)],
-                                [np.sin(angle), np.cos(angle)]])
-    return rotation_matrix.dot(S)
+def rotate(S, axis, angle):
+    rotation_matrix = {
+        'x': np.array([[1, 0, 0], [0, np.cos(angle), -np.sin(angle)], [0, np.sin(angle), np.cos(angle)]]),
+        'y': np.array([[np.cos(angle), 0, np.sin(angle)], [0, 1, 0], [-np.sin(angle), 0, np.cos(angle)]]),
+        'z': np.array([[np.cos(angle), -np.sin(angle), 0], [np.sin(angle), np.cos(angle), 0], [0, 0, 1]])
+    }
+    return np.dot(rotation_matrix[axis], S)
 
-def reflect(S):
-    # Reflect over the y-axis
-    return np.array([[S[0, i], -S[1, i]] for i in range(S.shape[1])]).T
+def reflect(S, plane):
+    reflection_matrix = {
+        'xy': np.array([[1, 0, 0], [0, 1, 0], [0, 0, -1]]),
+        'yz': np.array([[-1, 0, 0], [0, 1, 0], [0, 0, 1]]),
+        'zx': np.array([[1, 0, 0], [0, -1, 0], [0, 0, 1]])
+    }
+    return np.dot(reflection_matrix[plane], S)
 
 def minimize_form(forms):
     # Sort and find the minimum form lexicographically
@@ -31,14 +38,16 @@ def canonical_form(S):
     
     candidate_forms = []
     
-    # Consider 0, 90, 180, 270 degree rotations
-    for angle in [0, np.pi/2, np.pi, 3*np.pi/2]:
-        rotated = rotate(S_translated, angle)
-        candidate_forms.append(rotated)
-        
-        # Also consider the reflected form for each rotation
-        reflected = reflect(rotated)
-        candidate_forms.append(reflected)
+    # Consider rotations around x, y, and z axes
+    for axis in ['x', 'y', 'z']:
+        for angle in [0, np.pi/2, np.pi, 3*np.pi/2]:
+            rotated = rotate(S_translated, axis, angle)
+            candidate_forms.append(rotated)
+            
+            # Also consider the reflected form for each rotation
+            for plane in ['xy', 'yz', 'zx']:
+                reflected = reflect(rotated, plane)
+                candidate_forms.append(reflected)
 
     # Choose the canonical form as the 'smallest' one
     return minimize_form(candidate_forms)
@@ -66,6 +75,7 @@ iter_without_progress = 0  # Counter for iterations without progress
 def HPFold(P,Time=200,Temperature=1.5,J=-1.0,Mode=0):
     P = np.array(P)
     N = len(P)
+    
     seen_hashes = set()
 
     #further internal variables
@@ -74,11 +84,11 @@ def HPFold(P,Time=200,Temperature=1.5,J=-1.0,Mode=0):
 
     # Initial protein structure
     #S = np.concatenate((np.ones((1,N),dtype-int),np.zeros((1,N),dtype=int)))  #stretched in x
-    S = np.zeros((2,N),dtype=int)  # staircase
+    S = np.zeros((3,N),dtype=int)  # 3D structure
     S[0,1::2] = 1
     S[1,2::2] = 1
     S[:,0] = 0
-    
+    D = HPDistance(S)
     # Temperature range
     Temperature = np.max([Temperature,1.5*np.abs(J)])
     Temperature = np.linspace(Temperature,np.abs(J)/20.0,10)
@@ -103,6 +113,7 @@ def HPFold(P,Time=200,Temperature=1.5,J=-1.0,Mode=0):
             probability = 0.
 
             #the Monte-Carlo loop
+            #the Monte-Carlo loop
             while probability < np.random.random(1):
                 if j < S.shape[1]:
                     s_j = S[:,j]
@@ -119,7 +130,7 @@ def HPFold(P,Time=200,Temperature=1.5,J=-1.0,Mode=0):
                     #Check for overlap: This will give a 0 value is the D matrix
                     Dmin = np.min(D_mv)
                 
-                E_new = HPEnergy(P,S,J)
+                E_new = HPEnergy(P, S, J)
                 current_hash = hash_conformation(S)
                 if current_hash in seen_hashes:
                     iter_without_progress += 1
