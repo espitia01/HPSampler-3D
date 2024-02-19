@@ -5,9 +5,31 @@ from HPDistance import HPDistance
 from HPEnergy import HPEnergy
 import time
 from HPShow import HPShow
+from tqdm import tqdm
 import pandas as pd
+import concurrent.futures
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import logging
+logging.basicConfig(filename='simulation.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 time_dict = {}
+
+def process_protein_length(n):
+    local_datasets = []
+    local_times = []
+    for P in generate_sequences(n):
+        start_time = time.time()
+        df = HPFold(P)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        local_times.append(elapsed_time)
+        local_datasets.append(df)
+       # Aggregate times for this length
+    if n in time_dict:
+        time_dict[n].extend(local_times)
+    else:
+        time_dict[n] = local_times
+    return pd.concat(local_datasets)
 
 
 def translate_to_origin(S):
@@ -96,8 +118,8 @@ def HPFold(P,Time=200,Temperature=1.5,J=-1.0,Mode=0):
     #show the initial configuration
     SMin = S
     EMin = HPEnergy(P,S,J)
-    HPShow(P,S,EMin,Temperature[0],0)
-    plt.pause(1)
+    #HPShow(P,S,EMin,Temperature[0],0)
+    #plt.pause(1)
     
     dataset = []
 
@@ -148,40 +170,52 @@ def HPFold(P,Time=200,Temperature=1.5,J=-1.0,Mode=0):
                     SMin = S
             
             #a new configuration was found
-            if np.mod(i,MShow)==0: HPShow(P,S,E_new,temp,i)
+            #if np.mod(i,MShow)==0: HPShow(P,S,E_new,temp,i)
 
         #final configuration for that temperature
-        HPShow(P,S,E_new,temp,M)
+        #HPShow(P,S,E_new,temp,M)
     
 
     #the final-final configuration
     df = pd.DataFrame(dataset, columns=['Sequence', 'Structure', 'Energy'])
     min_energy = df['Energy'].min()
     max_energy = df['Energy'].max()
-    df['Label'] = np.where(df['Energy'] == min_energy, 1, (np.where(df['Energy'] != min_energy, 0, np.nan)))
-    HPShow(P,SMin,EMin,temp,M)
+    # Adjust the line where you assign the 'Label' column in your DataFrame as follows:
+    df['Label'] = np.where(df['Energy'] == 0.0, 0, np.where(df['Energy'] == min_energy, 1, 0))
+    #HPShow(P,SMin,EMin,temp,M)
     return df
 
-max_length = 4
 
-all_datasets = []
+if __name__ == "__main__":
+    import logging
+    from tqdm import tqdm
+    from concurrent.futures import ProcessPoolExecutor, as_completed
 
-for n in range(4, max_length + 1):
-    for P in generate_sequences(n):
-        start_time = time.time()  # Record start time
-        df = HPFold(P)
-        end_time = time.time()  # Record end time
-        elapsed_time = end_time - start_time  # Calculate elapsed time
+    logging.basicConfig(filename='simulation.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-        # Store elapsed time in the dictionary
-        if n in time_dict:
-            time_dict[n].append(elapsed_time)
-        else:
-            time_dict[n] = [elapsed_time]
-        all_datasets.append(df)
+    max_length = 50
+    all_datasets = []
+    time_dict = {}
 
-combined_df = pd.concat(all_datasets)
-combined_df.to_csv('combined_dataset_2.csv', index=False)
+    logging.info("Starting protein simulations")
+    print(f"Starting protein simulations up to length: {max_length}")
+    print("Simulation setup complete. Starting now...")
+    with ProcessPoolExecutor(max_workers=50) as executor:
+        futures = {executor.submit(process_protein_length, n): n for n in tqdm(range(4, max_length + 1), desc="Processing Proteins")}
+        print(f"Submitting task for protein length: {n}")
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                all_datasets.append(result)
+                print(f"Successfully processed protein length: {futures[future]}")
+                logging.info(f"Completed protein length: {futures[future]}")
+            except Exception as e:
+                logging.error(f"Error processing protein length {futures[future]}: {e}")
 
-average_time_dict = {n: sum(times)/len(times) for n, times in time_dict.items()}
-print("Average Time per Sequence Length:", average_time_dict)
+    combined_df = pd.concat(all_datasets)
+    combined_df.to_csv('combined_dataset_parallel.csv', index=False)
+
+    average_time_dict = {n: sum(times)/len(times) for n, times in time_dict.items()}
+    logging.info(f"Average Time per Sequence Length: {average_time_dict}")
+    print("Average Time per Sequence Length:", average_time_dict)
+    print("All protein simulations completed. Saving combined dataset...")

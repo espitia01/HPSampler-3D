@@ -27,6 +27,6 @@ def HPShow(P,S,Energy=0.0,Temperature=0.0,Time=0.0):
     ax.text(xy*(0.05-1),xy*0.7,xy*0.6,"E = %.2f"%Energy)
     
     plt.show(block=False)
-    plt.pause(0.1)
+    plt.pause(10)
     plt.close(fig)  # Close the figure
     return
