@@ -7,6 +7,7 @@ import time
 from HPShow import HPShow
 from tqdm import tqdm
 import pandas as pd
+import os
 import concurrent.futures
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import logging
@@ -15,6 +16,7 @@ logging.basicConfig(filename='simulation.log', level=logging.INFO, format='%(asc
 time_dict = {}
 
 def process_protein_length(n):
+    print(f"Processing protein length N = {n}")
     local_datasets = []
     local_times = []
     for P in generate_sequences(n):
@@ -79,14 +81,9 @@ def hash_conformation(S):
     return hash(tuple(S_canonical.flatten()))
 
 def generate_sequences(n):
-    if n == 1:
-        return [[0], [1]]
-    else:
-        sequences = []
-        for sequence in generate_sequences(n - 1):
-            sequences.append(sequence + [0])
-            sequences.append(sequence + [1])
-        return sequences
+    num_sequences = 2 ** n
+    sequences = np.array([[(i >> j) & 1 for j in range(n)] for i in range(num_sequences)], dtype=int)
+    return sequences
     
 MAX_ITER = 100  # Maximum iterations without progress
 iter_without_progress = 0  # Counter for iterations without progress
@@ -187,12 +184,6 @@ def HPFold(P,Time=200,Temperature=1.5,J=-1.0,Mode=0):
 
 
 if __name__ == "__main__":
-    import logging
-    from tqdm import tqdm
-    from concurrent.futures import ProcessPoolExecutor, as_completed
-
-    logging.basicConfig(filename='simulation.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
     max_length = 50
     all_datasets = []
     time_dict = {}
@@ -200,22 +191,31 @@ if __name__ == "__main__":
     logging.info("Starting protein simulations")
     print(f"Starting protein simulations up to length: {max_length}")
     print("Simulation setup complete. Starting now...")
-    with ProcessPoolExecutor(max_workers=50) as executor:
-        futures = {executor.submit(process_protein_length, n): n for n in tqdm(range(4, max_length + 1), desc="Processing Proteins")}
-        print(f"Submitting task for protein length: {n}")
+
+    max_workers = max(1, os.cpu_count() // 2)
+    print(f"Max workers: {max_workers}")
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {}
+        for n in range(4, max_length + 1):
+            future = executor.submit(process_protein_length, n)
+            futures[future] = n
+            print(f"Submitting task for protein length: {n}")
+
         for future in as_completed(futures):
+            protein_length = futures[future]
             try:
                 result = future.result()
                 all_datasets.append(result)
-                print(f"Successfully processed protein length: {futures[future]}")
-                logging.info(f"Completed protein length: {futures[future]}")
+                print(f"Successfully processed protein length: {protein_length}")
+                logging.info(f"Completed protein length: {protein_length}")
             except Exception as e:
-                logging.error(f"Error processing protein length {futures[future]}: {e}")
+                logging.error(f"Error processing protein length {protein_length}: {e}")
 
     combined_df = pd.concat(all_datasets)
     combined_df.to_csv('combined_dataset_parallel.csv', index=False)
 
-    average_time_dict = {n: sum(times)/len(times) for n, times in time_dict.items()}
+    average_time_dict = {n: sum(times) / len(times) for n, times in time_dict.items()}
     logging.info(f"Average Time per Sequence Length: {average_time_dict}")
     print("Average Time per Sequence Length:", average_time_dict)
     print("All protein simulations completed. Saving combined dataset...")
