@@ -2,23 +2,24 @@ import numpy as np
 import matplotlib.pyplot as plt
 from HPDistance import HPDistance
 
-def HPEnergy(P, S, J):
+def HPEnergy(P, S, J, D_cache=None):
     N = len(P)
-    D = HPDistance(S)
-
-    # Set diagonal and sub-diagonal to a value other than 1
-    for i in range(N):
-        D[i, i] = 0
-        if i < N - 1:
-            D[i, i + 1] = 0
-            D[i + 1, i] = 0
-
-    # Create matrix with the product of the protein array
+    
+    # Compute the distance matrix using the optimized HPDistance function
+    D = HPDistance(S, cache=D_cache)
+    
+    # Set the diagonal and sub-diagonal elements to 0
+    np.fill_diagonal(D, 0)
+    np.fill_diagonal(D[1:], 0)
+    np.fill_diagonal(D[:, 1:], 0)
+    
+    # Create a mask for elements equal to 1
+    mask = (D == 1)
+    
+    # Create a matrix with the product of the protein array
     P2 = np.outer(P, P)
-
-    # Calculate energy
-    E = np.sum((D == 1) * P2)
-
-    E *= 0.5 * J
-
+    
+    # Calculate energy using the mask and protein matrix
+    E = np.sum(mask * P2) * 0.5 * J
+    
     return E
